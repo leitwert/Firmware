@@ -46,6 +46,8 @@
 #include <drivers/drv_hrt.h>
 #include <stdio.h>
 
+#define PROGRESS_INT_SCALING	10000
+
 void pwm_limit_init(pwm_limit_t *limit)
 {
 	limit->state = PWM_LIMIT_STATE_INIT;
@@ -112,7 +114,15 @@ void pwm_limit_calc(const bool armed, const unsigned num_channels, const uint16_
 			{
 				hrt_abstime diff = hrt_elapsed_time(&limit->time_armed);
 
-				progress = diff * 10000 / RAMP_TIME_US;
+				progress = diff * PROGRESS_INT_SCALING / RAMP_TIME_US;
+
+				if (progress > PROGRESS_INT_SCALING) {
+					progress = PROGRESS_INT_SCALING;
+				}
+
+				float ramp_scaling = progress / (float)PROGRESS_INT_SCALING;
+				/* cubic scaling */
+				ramp_scaling *= ramp_scaling * ramp_scaling;
 
 				for (unsigned i=0; i<num_channels; i++) {
 	                
@@ -128,7 +138,7 @@ void pwm_limit_calc(const bool armed, const unsigned num_channels, const uint16_
 						}
 
 						unsigned disarmed_min_diff = min_pwm[i] - disarmed;
-						ramp_min_pwm = disarmed + (disarmed_min_diff * progress) / 10000;
+						ramp_min_pwm = disarmed + (disarmed_min_diff * progress) / PROGRESS_INT_SCALING;
 
 					} else {
 	                    
@@ -142,7 +152,7 @@ void pwm_limit_calc(const bool armed, const unsigned num_channels, const uint16_
 						control_value = -1.0f * control_value;
 					}
 
-					effective_pwm[i] = control_value * (max_pwm[i] - ramp_min_pwm)/2 + (max_pwm[i] + ramp_min_pwm)/2;
+					effective_pwm[i] = ramp_scaling * control_value * (max_pwm[i] - ramp_min_pwm)/2 + (max_pwm[i] + ramp_min_pwm)/2;
 
 					/* last line of defense against invalid inputs */
 					if (effective_pwm[i] < ramp_min_pwm) {
